@@ -17,6 +17,16 @@
 #include "StreamLineSceneParser.h"
 
 #include "common/xml/XML.h"
+// vtk
+#include <vtkDataArray.h>
+#include <vtkDataSet.h>
+#include <vtkGenericDataObjectReader.h>
+#include <vtkPointLocator.h>
+#include <vtkPointData.h>
+#include <vtkPolyData.h>
+#include <vtkStructuredGrid.h>
+#include <vtkSmartPointer.h>
+#include <vtkCellArray.h>
 
 #include <iostream>
 
@@ -50,7 +60,7 @@ namespace commandline {
       float f = (x-x0)/(x1-x0);
       return f*y1+(1-f)*y0;
     }
-  
+
     vec4f colorOf(const float f)
     {
       if (f < .5f)
@@ -180,6 +190,40 @@ namespace commandline {
       fclose(file);
     }
 
+    void parseVTK(const FileName &fn)
+    {
+      // Get all data from the file
+      vtkSmartPointer<vtkGenericDataObjectReader> reader = vtkSmartPointer<vtkGenericDataObjectReader>::New();
+      reader->SetFileName(fn.c_str());
+      reader->Update();
+      vtkPolyData* output = reader->GetPolyDataOutput();
+
+      vtkPoints* vtk_points = output -> GetPoints(); //points
+      vtkCellArray *lines = output -> GetLines(); //lines
+
+      vec3fa pnt;
+
+      // read points
+      for (int i = 0; i < output -> GetNumberOfPoints(); i++)
+      {
+        double point[3];
+        vtk_points -> GetPoint(i, point);
+        pnt.x = point[0]; pnt.y = point[1]; pnt.z = point[2];
+        vertex.push_back(pnt);
+      }
+      // read index by lines
+      lines -> InitTraversal();
+      vtkSmartPointer<vtkIdList> idList = vtkSmartPointer<vtkIdList>::New();
+      while(lines ->GetNextCell(idList))
+      {
+        for( vtkIdType pointId = 0; pointId < idList -> GetNumberOfIds() - 1; pointId++)
+        {
+          int32_t i_ = idList -> GetId(pointId);
+          index.push_back(i_);
+        }
+      }
+    }
+
     void parse(const FileName &fn)
     {
       if (fn.ext() == "pnt")
@@ -194,7 +238,9 @@ namespace commandline {
         fclose(file);
       } else if (fn.ext() == "slraw") {
         parseSLRAW(fn);
-      } else
+      } else if(fn.ext() == "vtk"){
+        parseVTK(fn);
+      }else
         throw std::runtime_error("unknown input file format "+fn.str());
     }
     box3f getBounds() const
@@ -467,6 +513,12 @@ namespace commandline {
         else if (fn.ext() == "sv") {
           triangles   = new Triangles;
           triangles->parseSV(fn);
+          loadedScene = true;
+        }
+        else if (fn.ext() == "vtk"){
+          streamLines = new StreamLines;
+          streamLines -> parseVTK(fn);
+          streamLines -> radius = 0.003f;
           loadedScene = true;
         }
       } else if (arg == "--streamline-radius") {

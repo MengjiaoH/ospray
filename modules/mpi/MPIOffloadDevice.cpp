@@ -190,10 +190,12 @@ namespace ospray {
       - the user may or may not have launched MPI explicitly for his app
       - the app may or may not be running distributed
       - the ospray frontend (the part linked to the app) will wait for a remote
-        MPI group of workers to connect to this app
+        MPI gruop of
+      workers to connect to this app
       - the ospray frontend will store the port its waiting on connections for
-        in the filename passed to this function; or will print it to stdout if
-        this is nullptr
+        in the
+      filename passed to this function; or will print it to stdout if this is
+      nullptr
     */
     void createMPI_ListenForWorkers(int *ac, const char **av)
     {

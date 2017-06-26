@@ -86,6 +86,20 @@ namespace ospray {
           as a plain array of floats (with 12 floats per patch), or as
           a array of vec3fs. */
       Ref<Data> patchesData;
+      /* edit by Mengjiao. */
+      // add color data for patches
+      Ref<Data> colorData;
+      // add color stride 
+      int64 offset_colorID;
+      size_t colorStride;
+      size_t colorOffset;
+      // add data for spheres
+      Ref<Data> radius;
+      int64 offset_center;
+      Ref<Data> sphere_colorData;
+      int64 sphere_offset_colorID;
+      size_t sphere_colorStride;
+      size_t sphere_colorOffset;
     };
     
   } // ::ospray::bilinearPatch

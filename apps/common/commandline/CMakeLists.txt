@@ -19,6 +19,10 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_LIST_DIR})
 OPTION(OSPRAY_COMMANDLINE_TACHYON_SUPPORT "Support Tachyon scene parser" )
 MARK_AS_ADVANCED(OSPRAY_COMMANDLINE_TACHYON_SUPPORT)
 
+#VTK package
+find_package(VTK REQUIRED)
+include(${VTK_USE_FILE})
+
 IF(OSPRAY_COMMANDLINE_TACHYON_SUPPORT)
   # -------------------------------------------------------
   find_program(LEX_EXE flex)
@@ -104,3 +108,10 @@ LINK
   ospray_importer
   ospray_tfn
 )
+
+
+if(VTK_LIBRARIES)
+  target_link_libraries(ospray_commandline ${VTK_LIBRARIES})
+else()
+  target_link_libraries(ospray_commandline vtkHybrid vtkWidgets)
+endif()

@@ -68,10 +68,29 @@ namespace ospray {
       std::vector<Patch> patches = readPatchesFromFiles(args.inputFiles,worldBounds);
 
       ospLoadModule("bilinear_patches");
+      //color data
+      float color[] = { 0.9f, 0.6f, 0.3f, 1.0f,
+			0.8f, 0.8f, 0.3f, 1.0f,
+			0.3f, 0.7f, 0.9f, 1.0f};
+
+      float sphere_color[] = { 1.0f, 0.0f, 0.0f, 1.0f,
+			0.0f, 1.0f, 0.0f, 1.0f,
+			0.0f, 0.0f, 1.0f, 1.0f,
+      0.5f, 0.7f, 0.6f, 1.0f};
+
+      float radius[] = {0.1f, 0.2f, 0.4f};
+
+
+      ospray::cpp::Data color_data(3, OSP_FLOAT4, color);
+      ospray::cpp::Data sphere_color_data(4, OSP_FLOAT4, sphere_color);
+      ospray::cpp::Data r(3, OSP_FLOAT, radius);
 
       ospray::cpp::Data data(patches.size()*12,OSP_FLOAT,patches.data());
       ospray::cpp::Geometry geometry("bilinear_patches");
       geometry.set("patches",data);
+      geometry.set("color", color_data);
+      //geometry.set("sphere_color", sphere_color_data);
+      geometry.set("radius", r);
       geometry.commit();
       
       ospray::cpp::Model model;

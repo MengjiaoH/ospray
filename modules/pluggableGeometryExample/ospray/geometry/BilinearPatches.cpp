@@ -56,6 +56,7 @@ namespace ospray {
       control points */
     void BilinearPatches::commit()
     {
+
       this->patchesData = getParamData("patches");
 
       /* assert that some valid input data is available */
@@ -71,21 +72,48 @@ namespace ospray {
         done, and a actual user geometry has to be built */
     void BilinearPatches::finalize(Model *model)
     {
+      // patches data
+      colorData = getParamData("color");
+      colorOffset = getParam1i("color_offset" ,0);
+      auto colComps = colorData && colorData ->type == OSP_FLOAT3 ? 3:4;
+      colorStride = getParam1i("color_stride", colComps * sizeof(float));
+      offset_colorID = getParam1i("offset_colorID", -1);
+
+      // spheres data
+      radius = getParamData("radius");
+      offset_center = getParam1i("offset_center", 0);
+      sphere_colorData = getParamData("sphere_color");
+      sphere_offset_colorID = getParam1i("sphere_offset_colorID", -1);
+      auto sphere_colComps = sphere_colorData && sphere_colorData ->type == OSP_FLOAT3 ? 3:4;
+      sphere_colorStride = getParam1i("sphere_color_stride", sphere_colComps * sizeof(float));
+      sphere_colorOffset = getParam1i("sphere_color_offset" ,0);
+
       // sanity check if a patches data was actually set!
       if (!patchesData)
         return;
-      
+
       // look at the data we were provided with ....
       size_t numPatchesInInput = patchesData->numBytes / sizeof(Patch);
       std::cout << "#osp.blp: found " << numPatchesInInput
-                << " patches in data array" << std::endl;
+                << " patches in data array" 
+                << "radius" << radius <<std::endl;
       
       /* get the acual 'raw' pointer to the data (ispc doesn't konw
          what to do with the 'Data' abstraction calss */
       const void *patchesDataPointer = patchesData->data;
       ispc::BilinearPatches_finalize(getIE(),model->getIE(),
                                      (float*)patchesDataPointer,
-                                     numPatchesInInput);
+                                     numPatchesInInput,
+				                             colorData ? colorData -> data : nullptr,
+				                             colorOffset, 
+                                     colorStride,
+				                             offset_colorID, 
+                                     radius ? radius -> data : nullptr, 
+                                     offset_center,
+                                     sphere_colorData ? sphere_colorData -> data : nullptr,
+                                     sphere_colorStride,
+                                     sphere_colorOffset,
+                                     sphere_offset_colorID);
     }
 
 

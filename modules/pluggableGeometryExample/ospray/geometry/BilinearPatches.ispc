@@ -26,6 +26,8 @@
 #include "embree2/rtcore_scene.isph"
 #include "embree2/rtcore_geometry_user.isph"
 
+
+
 /*! input data for a single patch */
 struct Patch {
   vec3f v00, v01, v10, v11;
@@ -40,10 +42,28 @@ struct BilinearPatches {
 
   size_t numPatches;
   Patch *uniform patchArray;
+  uint8 *data;
+  int32 stride;
+  uint8 *color;
+  int    color_stride;
+  int    color_offset;
+  // add sphere radius
+ uint8 *radius;
+  // offset param
+  int offset_center;
+  int offset_colorID;
+
+  // sphere color
+  uint8 *sphere_color;
+  int sphere_color_stride;
+  int sphere_color_offset;
+  int sphere_offset_colorID;
+
 };
 
-
-
+/*
+*   POST INTERSECT
+*/
 static void BilinearPatches_postIntersect(uniform Geometry *uniform geometry,
                                   uniform Model *uniform model,
                                   varying DifferentialGeometry &dg,
@@ -53,10 +73,36 @@ static void BilinearPatches_postIntersect(uniform Geometry *uniform geometry,
   BilinearPatches *uniform self = (BilinearPatches *uniform)geometry;
   dg.Ng = dg.Ns = normalize(ray.Ng);
 
-  if (flags & DG_MATERIALID) {
-    dg.materialID = 0;
-    dg.material   = self->super.material;
+// edit by Mengjiao  
+// color
+  if ((flags & DG_COLOR) && self->color) {
+     uint32 colorID = 0;
+     if (self->offset_colorID >= 0) {
+         uniform uint8 *varying patchPtr = self->data + self->stride * ray.primID;
+         colorID = *((uniform uint32 *varying)(patchPtr+self->offset_colorID));
+    } else
+        colorID = ray.primID;
+        uint32 colorAddr = self->color_offset + colorID * self->color_stride;
+        dg.color = *((vec4f *)(self->color+colorAddr));
+        dg.color.w = 1.f;
   }
+
+    if ((flags & DG_COLOR) && self->sphere_color) {
+      uint32 colorID = 0;
+      if (self->sphere_offset_colorID >= 0) {
+          uniform uint8 *varying spherePtr = self -> data + self -> stride * ray.primID;
+          colorID = *((uniform uint32 *varying)(spherePtr + self -> sphere_offset_colorID));
+     } else
+        colorID = ray.primID;
+        uint32 colorAddr = self -> sphere_color_offset + colorID * self -> sphere_color_stride;
+        dg.color = *((vec4f *)(self->sphere_color+colorAddr));
+        dg.color.w = 1.f;
+  }
+
+  // if (flags & DG_MATERIALID) {
+  //   dg.materialID = 0;
+  //   dg.material   = self->super.material;
+  // }
 }
 
 
@@ -99,20 +145,118 @@ export void BilinearPatches_destroy(void *uniform _self)
     box for a single given primitmive 'primID' */
 unmasked void BilinearPatches_bounds(BilinearPatches *uniform self,
                                      uniform size_t primID,
-                                     uniform box3fa &bbox)
+                                     uniform  box3fa &bbox)
 {
   print("bounds\n");
   Patch *uniform patch = self->patchArray+primID;
-  bbox = box_extend(box_extend(box_extend(box_extend(make_box3fa_empty(),make_vec3fa(patch->v00)),
-                                          make_vec3fa(patch->v01)),
-                               make_vec3fa(patch->v10)),
-                    make_vec3fa(patch->v11));
+  // bbox = box_extend(box_extend(box_extend(box_extend(make_box3fa_empty(),make_vec3fa(patch->v00)),
+  // make_vec3fa(patch->v01)),
+  // make_vec3fa(patch->v10)),
+  // make_vec3fa(patch->v11));
+
+  uniform uint8 *uniform radiusPtr = self -> radius + sizeof(uniform float) * primID;
+  uniform float r = *((float *uniform) (radiusPtr));
+     //uniform  float r =  *((uniform float *)(self -> radius + radiusAddr));
+
+     //const uniform vec3fa r = make_vec3fa(self->radius + radiusAddr));
+  
+  const uniform vec3fa A00 = make_vec3fa(patch -> v00) ;
+  const uniform vec3fa A01 = make_vec3fa(patch -> v01);
+  const uniform vec3fa A10 = make_vec3fa(patch -> v10) ;
+  const uniform vec3fa A11 = make_vec3fa(patch -> v11);
+
+  // const uniform box3fa bbox0 = make_box3fa(A00 - self -> radius , A00 + self ->radius);
+  // const uniform box3fa bbox1 = make_box3fa(A01 - self -> radius, A01 + self ->radius);
+  // const uniform box3fa bbox2 = make_box3fa(A10 - self ->radius, A10 + self ->radius);
+  // const uniform box3fa bbox3 = make_box3fa(A11 - self -> radius, A11 + self ->radius);
+
+  const uniform box3fa bbox0 = make_box3fa(A00 - r , A00 + r);
+  const uniform  box3fa bbox1 = make_box3fa(A01 - r , A01 + r);
+  const uniform box3fa bbox2 = make_box3fa(A10 - r, A10 + r);
+  const uniform box3fa bbox3 = make_box3fa(A11 - r, A11 + r);
+
+
+  bbox = box_extend(box_extend( box_extend(bbox0, bbox1), bbox2), bbox3);
+ 
 }
 
+/*
+edit by Mengjiao add sphere
+ */
+inline bool intersectSphere(varying Ray &ray,
+			    const vec3f &A,
+			    const uniform float r)
+{
+  bool hit = false;
+  const float a = dot(ray.dir, ray.dir);
+  const float b = 2.0f * dot(ray.dir, A);
+  const float c = dot(A, A) - r * r;
+  
+  const float radical = b * b - 4.0f * a * c;
+  if(radical < 0.0f) return false;
 
+  const float srad = sqrt(radical);
+  const float t_in = (b - srad) * rcpf(2.0f * a);
+  const float t_out = (b + srad) * rcpf(2.0f * a);
+  
+  if(t_in > ray.t0 && t_in  < ray.t) {
+    ray.t = t_in;
+    hit = true;
+    //return true;
+  }else if (t_out > ray.t0 && t_out < ray.t){
+    ray.t = t_out;
+    hit = true;
+   // return true;    
+  }
+  if(hit) {ray.Ng = ray.org + ray.t * ray.dir - A;}
 
+  return hit;
+}
+inline bool intersectCylinder(varying Ray &ray,
+                                     const vec3f &A, const vec3f &B,
+                                     const uniform float r)
+{
+  const vec3f V = ray.dir;
 
-bool recursiveBisection(varying Ray &ray,
+  const vec3f AB = B - A;
+  
+  const vec3f AOxAB = cross(AB,A);
+  const vec3f VxAB  = cross(V,AB);
+  const float ab2   = dot(AB,AB);
+  const float a     = dot(VxAB,VxAB);
+  const float b     = 2 * dot(VxAB,AOxAB);
+  const float c     = dot(AOxAB,AOxAB) - (sqr(r) * ab2);
+
+  // clip to near and far cap of cylinder
+  const float rVAB = rcp(dot(V,AB));
+  const float tA = dot(AB,A) * rVAB;
+  const float tB = dot(AB,B) * rVAB;
+  const float tAB0 = max(ray.t0,min(tA,tB));
+  const float tAB1 = min(ray.t, max(tA,tB));
+
+  // ------------------------------------------------------------------
+  // abc formula: t0,1 = (-b +- sqrt(b^2-4*a*c)) / 2a
+  //
+  const float radical = b*b-4.f*a*c;
+  if (radical < 0.f) return false;
+  
+  const float srad = sqrt(radical);
+
+  const float t_in = (- b - srad) *rcpf(2.f*a);
+  const float t_out= (- b + srad) *rcpf(2.f*a);
+
+  if (t_in >= tAB0 && t_in <= tAB1) {
+    ray.t = t_in;
+    ray.Ng = ray.org + ray.t * ray.dir - A;
+    return true;
+  } else if (t_out >= tAB0 && t_out <= tAB1) {
+    ray.t = t_out;
+    ray.Ng = ray.org + ray.t * ray.dir - A;
+    return true;
+  }
+  return false;
+}
+inline bool recursiveBisection(varying Ray &ray,
                         const varying LinearSpace3f &frame,
                         const uniform vec3f p00,
                         const uniform vec3f p01,
@@ -163,7 +307,8 @@ bool recursiveBisection(varying Ray &ray,
     
     ray.t = t;
     ray.u = uc;
-    ray.v = vc;
+    ray.v = vc; 
+
 
     const vec3f pu0 = p00+ray.u*(p01-p00);
     const vec3f pu1 = p10+ray.u*(p11-p10);
@@ -200,11 +345,38 @@ void BilinearPatches_intersect(BilinearPatches *uniform self,
                                varying Ray &ray,
                                uniform size_t primID)
 {
-  Patch *uniform patch = self->patchArray+primID;
+  Patch *uniform patch = self->patchArray + primID;
 
+  
   // create a simple coordinate system with x and y directions
   // orthogonal to the ray
   const LinearSpace3f coordSys = frame(ray.dir);
+  bool hit = 0;
+
+  uniform uint8 *uniform radiusPtr = self -> radius + sizeof(uniform float) * primID;
+  uniform float r = *((float *uniform) (radiusPtr));
+  //print("radius", r);
+  
+  const vec3f A00 = make_vec3f(patch -> v00) - ray.org;
+  const vec3f A01 = make_vec3f(patch -> v01) - ray.org;
+  const vec3f A10 = make_vec3f(patch -> v10) - ray.org;
+  const vec3f A11 = make_vec3f(patch -> v11) - ray.org;
+  // hit |= intersectSphere(ray, A00, self -> radius + primID );
+  // hit |= intersectSphere(ray, A01, self -> radius + primID);
+  // hit |= intersectSphere(ray, A10, self -> radius + primID);
+  // hit |= intersectSphere(ray, A11, self -> radius + primID);
+  // hit |= intersectCylinder(ray, A00, A01, self->radius / 8.0f);
+  // hit |= intersectCylinder(ray, A01, A10, self->radius / 8.0f);
+  // hit |= intersectCylinder(ray, A10, A11 ,self->radius / 8.0f);
+  // hit |= intersectCylinder(ray, A00, A11, self->radius / 8.0f);
+  hit |= intersectSphere(ray, A00, r);
+  hit |= intersectSphere(ray, A01, r);
+  hit |= intersectSphere(ray, A10, r);
+  hit |= intersectSphere(ray, A11, r);
+  hit |= intersectCylinder(ray, A00, A01, r / 8.0f);
+  hit |= intersectCylinder(ray, A01, A10, r / 8.0f);
+  hit |= intersectCylinder(ray, A10, A11 ,r / 8.0f);
+  hit |= intersectCylinder(ray, A00, A11, r / 8.0f);
 
   if (recursiveBisection(ray,coordSys,
                          patch->v00,patch->v01,patch->v10,patch->v11,
@@ -213,6 +385,11 @@ void BilinearPatches_intersect(BilinearPatches *uniform self,
     ray.geomID = self->super.geomID;
     ray.primID = primID;
   }
+    if (hit) {
+    ray.geomID = self->super.geomID;
+    ray.primID = primID;
+  }
+
 }
 
 
@@ -225,7 +402,18 @@ void BilinearPatches_intersect(BilinearPatches *uniform self,
 export void BilinearPatches_finalize(void *uniform _self,
                                      void *uniform _model,
                                      float *uniform patchesDataMemory,
-                                     uniform size_t numPatches)
+                                     uniform size_t numPatches,
+				     void *uniform color,
+				     uniform int color_offset,
+				     uniform int color_stride,
+				     uniform int offset_colorID,
+				     void *uniform radius,
+				     uniform int offset_center,
+             void *uniform sphere_color,
+             uniform int sphere_color_stride,
+             uniform int sphere_color_offset,
+             uniform int sphere_offset_colorID
+             )
 {
   // first, typecast to our 'real' type. since ispc can't export real
   // types to c we have to pass 'self' in as a void*, and typecast
@@ -235,6 +423,19 @@ export void BilinearPatches_finalize(void *uniform _self,
   // set our internal data.
   self->numPatches = numPatches;
   self->patchArray = (Patch *uniform)patchesDataMemory;
+  
+  // edit by Mengjiao
+  self -> color = (uint8 *uniform) color;
+  self -> color_stride = color_stride;
+  self -> color_offset = color_offset;
+  self -> offset_colorID = offset_colorID;
+  self -> radius = (uint8 *uniform) radius;
+  self -> offset_center = offset_center;
+
+  self -> sphere_color = (uint8 *uniform) sphere_color;
+  self -> sphere_color_stride = sphere_color_stride;
+  self -> sphere_color_offset = sphere_color_offset;
+  self -> sphere_offset_colorID = sphere_offset_colorID;
 
   // ... and let embree build a bvh, with 'numPatches' primitmives and
   // our function pointers for ray-prim interseciton and
