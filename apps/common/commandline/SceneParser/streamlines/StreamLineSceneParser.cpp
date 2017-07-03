@@ -97,7 +97,25 @@ namespace commandline {
   struct StreamLines {
     std::vector<vec3fa> vertex;
     std::vector<int>    index;
+    std::vector<vec4f> magnitude_color;
+    std::vector<vec4f> index_color;
+    float colorflag {0.f};
+    // std::string colorflag = "magnitude";
     float radius {0.001f};
+
+    vec3f lerpf(float x, float x0, float x1, vec3f y0, vec3f y1)
+    {
+      float f = (x-x0)/(x1-x0);
+      return f*y1+(1-f)*y0;
+    }
+
+    vec4f colorOf(const float f)
+    {
+      if (f < .5f)
+        return vec4f(lerpf(f, 0.f,.5f,vec3f(0),vec3f(0,0,1)), 1.f);
+      else
+        return vec4f(lerpf(f, .5f,1.f,vec3f(0,0,1),vec3f(1,0,0)), 1.f);
+    }
 
     void parsePNT(const FileName &fn)
     {
@@ -202,7 +220,7 @@ namespace commandline {
       vtkCellArray *lines = output -> GetLines(); //lines
 
       vec3fa pnt;
-
+      std::vector<float> magnitude;
       // read points
       for (int i = 0; i < output -> GetNumberOfPoints(); i++)
       {
@@ -210,17 +228,40 @@ namespace commandline {
         vtk_points -> GetPoint(i, point);
         pnt.x = point[0]; pnt.y = point[1]; pnt.z = point[2];
         vertex.push_back(pnt);
+        // calculate magnitude
+        float mag = std::sqrt(point[0] * point[0] + point[1] * point[1] + point[2] * point[2]);
+        magnitude.push_back(mag);
       }
+      // map magnitude to color
+        float max = *std::max_element(magnitude.begin(), magnitude.end());
+        float min = *std::min_element(magnitude.begin(), magnitude.end());
+        for (int i = 0; i < magnitude.size(); i++)
+        {
+          magnitude_color.push_back(colorOf((magnitude[i] - min) / (max - min)));
+        }
+
+
       // read index by lines
       lines -> InitTraversal();
       vtkSmartPointer<vtkIdList> idList = vtkSmartPointer<vtkIdList>::New();
       while(lines ->GetNextCell(idList))
       {
+        std::vector<int32_t> tempindex;
         for( vtkIdType pointId = 0; pointId < idList -> GetNumberOfIds() - 1; pointId++)
         {
           int32_t i_ = idList -> GetId(pointId);
           index.push_back(i_);
+          tempindex.push_back(i_);
         }
+        tempindex.push_back(idList -> GetId(idList -> GetNumberOfIds()));
+        // map index to color
+          float max = *std::max_element(tempindex.begin(), tempindex.end());
+          float min = *std::min_element(tempindex.begin(), tempindex.end());
+          for (int i = 0; i < tempindex.size(); i++)
+          {
+            index_color.push_back(colorOf((tempindex[i] - min) / (max - min)));
+          }
+          tempindex.clear();
       }
     }
 
@@ -518,16 +559,21 @@ namespace commandline {
         else if (fn.ext() == "vtk"){
           streamLines = new StreamLines;
           streamLines -> parseVTK(fn);
-          streamLines -> radius = 0.003f;
           loadedScene = true;
         }
-      } else if (arg == "--streamline-radius") {
-        streamLines->radius = atof(av[++i]);
-#if 0
-      } else if (arg == "--streamline-export") {
-        exportOSX(av[++i], streamLines, triangles);
-#endif
+      }else if(arg == "--colorflag"){
+        std::cout << av[++i] << std::endl;
+        streamLines -> colorflag = atof(av[++i]);
+        std::cout << "colorflag: " << streamLines -> colorflag << std::endl;
       }
+       else if (arg == "--streamline-radius") {
+            streamLines->radius = atof(av[++i]);}
+// #if 0
+//       } else if (arg == "--streamline-export") {
+//         exportOSX(av[++i], streamLines, triangles);
+// #endif
+      // }
+
     }
 
     if (loadedScene) {
@@ -550,8 +596,21 @@ namespace commandline {
                                     OSP_FLOAT3A, &streamLines->vertex[0]);
         OSPData index  = ospNewData(streamLines->index.size(),
                                     OSP_UINT, &streamLines->index[0]);
+        OSPData magnitude_color = ospNewData(streamLines -> magnitude_color.size(),
+                                    OSP_FLOAT4, &streamLines -> magnitude_color[0]);
+        OSPData index_color = ospNewData(streamLines -> index_color.size(),
+                                                                OSP_FLOAT4, &streamLines -> index_color[0]);
         ospSetObject(geom,"vertex",vertex);
         ospSetObject(geom,"index",index);
+        //color
+        // std::string temp = streamLines -> colorflag;
+        std::cout << "colorflag: " << streamLines -> colorflag << std::endl;
+        if(streamLines -> colorflag == 0){
+          ospSetObject(geom, "vertex.color", magnitude_color);
+        }else{
+          ospSetObject(geom, "vertex.color", index_color);
+        }
+
         ospSet1f(geom,"radius",streamLines->radius);
         if (mat)
           ospSetMaterial(geom,mat);
