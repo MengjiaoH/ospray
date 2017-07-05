@@ -562,19 +562,20 @@ namespace commandline {
           loadedScene = true;
         }
       }else if(arg == "--colorflag"){
-        std::cout << av[++i] << std::endl;
-        streamLines -> colorflag = atof(av[++i]);
+        //std::cout << av[++i] << std::endl;
+	float temp = atof(av[++i]);
+        streamLines -> colorflag = temp;
         std::cout << "colorflag: " << streamLines -> colorflag << std::endl;
       }
-       else if (arg == "--streamline-radius") {
-            streamLines->radius = atof(av[++i]);}
+      else if (arg == "--streamline-radius") {
+	     streamLines->radius = atof(av[++i]);}
 // #if 0
 //       } else if (arg == "--streamline-export") {
 //         exportOSX(av[++i], streamLines, triangles);
 // #endif
       // }
 
-    }
+          }
 
     if (loadedScene) {
       sceneModel = make_unique<cpp::Model>();
