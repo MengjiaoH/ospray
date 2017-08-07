@@ -1,9 +1,9 @@
 OSPRay
 ======
 
-This is release v1.3.0 of OSPRay. For changes and new features see the
-[changelog](CHANGELOG.md). Also visit http://www.ospray.org for more
-information.
+This is release v1.3.1 (devel) of OSPRay. For changes and new features
+see the [changelog](CHANGELOG.md). Also visit http://www.ospray.org for
+more information.
 
 OSPRay Overview
 ===============
@@ -76,7 +76,7 @@ before you can build OSPRay you need the following prerequisites:
     for ISPC in the `PATH` and in the directory right "next to" the
     checked-out OSPRay sources.[^1] Alternatively set the CMake variable
     `ISPC_EXECUTABLE` to the location of the ISPC compiler.
--   Per default OSPRay uses the [Intel® Threading Building
+-   Per default OSPRay uses the Intel® [Threading Building
     Blocks](https://www.threadingbuildingblocks.org/) (TBB) as tasking
     system, which we recommend for performance and flexibility reasons.
     Alternatively you can set CMake variable `OSPRAY_TASKING_SYSTEM` to
@@ -154,7 +154,7 @@ The following [API
 documentation](http://www.sdvis.org/ospray/download/OSPRay_readme_devel.pdf "OSPRay Documentation")
 of OSPRay can also be found as a [pdf
 document](http://www.sdvis.org/ospray/download/OSPRay_readme_devel.pdf "OSPRay Documentation")
-(2.6MB).
+(2.1MB).
 
 For a deeper explanation of the concepts, design, features and
 performance of OSPRay also have a look at the IEEE Vis 2016 paper
@@ -199,7 +199,7 @@ application's `main` function. For an example see the
 [tutorial](#tutorial). For possible error codes see section [Error
 Handling and Status Messages](#error-handling-and-status-messages). It
 is important to note that the arguments passed to `ospInit()` are
-prcessed in order they are listed. The following parameters (which are
+processed in order they are listed. The following parameters (which are
 prefixed by convention with "`--osp:`") are understood:
 
 <table style="width:98%;">
@@ -285,7 +285,7 @@ always provides the "`default`" device, which maps to a local CPU
 rendering device. If it is enabled in the build, you can also use
 "`mpi`" to access the MPI multi-node rendering device (see [Parallel
 Rendering with MPI](#parallel-rendering-with-mpi) section for more
-info). Once a device is created, you can call
+information). Once a device is created, you can call
 
 ``` {.cpp}
 void ospDeviceSet1i(OSPDevice, const char *id, int val);
@@ -360,8 +360,8 @@ The following errors are currently used by OSPRay:
 
 | Name                    | Description                                           |
 |:------------------------|:------------------------------------------------------|
-| OSP\_NO\_ERROR          | no error occured                                      |
-| OSP\_UNKNOWN\_ERROR     | an unknown error occured                              |
+| OSP\_NO\_ERROR          | no error occurred                                     |
+| OSP\_UNKNOWN\_ERROR     | an unknown error occurred                             |
 | OSP\_INVALID\_ARGUMENT  | an invalid argument was specified                     |
 | OSP\_INVALID\_OPERATION | the operation is not allowed for the specified object |
 | OSP\_OUT\_OF\_MEMORY    | there is not enough memory to execute the command     |
@@ -1075,7 +1075,7 @@ ambient lights cause ambient illumination (without occlusion).
 Per default the background of the rendered image will be transparent
 black, i.e. the alpha channel holds the opacity of the rendered objects.
 This facilitates transparency-aware blending of the image with an
-arbitraty background image by the application. The parameter `bgColor`
+arbitrary background image by the application. The parameter `bgColor`
 can be used to already blend with a constant background color (and
 alpha) during rendering.
 
@@ -1539,13 +1539,15 @@ parameters:
 : Parameters accepted by all cameras.
 
 The camera is placed and oriented in the world with `pos`, `dir` and
-`up`. The region of the camera sensor that is rendered to the image can
-be specified in normalized screen-space coordinates with `imageStart`
-(lower left corner) and `imageEnd` (upper right corner). This can be
-used, for example, to crop the image or to achieve asymmetrical view
-frusta. Note that values outside the default range of \[0–1\] are valid,
-which is useful to easily realize overscan or film gate, or to emulate a
-shifted sensor.
+`up`. OSPRay uses a right-handed coordinate system. The region of the
+camera sensor that is rendered to the image can be specified in
+normalized screen-space coordinates with `imageStart` (lower left
+corner) and `imageEnd` (upper right corner). This can be used, for
+example, to crop the image, to achieve asymmetrical view frusta, or to
+horizontally flip the image to view scenes which are specified in a
+left-handed coordinate system. Note that values outside the default
+range of \[0–1\] are valid, which is useful to easily realize overscan
+or film gate, or to emulate a shifted sensor.
 
 #### Perspective Camera
 
@@ -1906,7 +1908,7 @@ example above using this syntax:
 
 This method of launching the application and OSPRay worker separately
 works best for applications which do not immediately call `ospInit()` in
-thier `main()` function, or for environments where application
+their `main()` function, or for environments where application
 dependencies (such as GUI libraries) may not be available on compute
 nodes.
 
@@ -1943,7 +1945,7 @@ The first image `firstFrame.ppm` shows the result after one call to
 `ospRenderFrame` – jagged edges and noise in the shadow can be seen.
 Calling `ospRenderFrame` multiple times enables progressive refinement,
 resulting in antialiased edges and converged shadows, shown after ten
-frames in the second image `accumulatedFrames.png`.
+frames in the second image `accumulatedFrames.ppm`.
 
 ![First frame.](https://ospray.github.io/images/tutorial_firstframe.png)
 
@@ -1970,6 +1972,76 @@ scene importer from a file. Changing the filename to an appropriate file
 will load the scene and propagate the resulting state.
 
 <img src="https://ospray.github.io/images/exampleViewer.jpg" alt="Screenshot of ospExampleViewerSg" style="width:80.0%" />
+
+Distributed Viewer
+------------------
+
+The application `ospDistribViewerDemo` demonstrates how to write a
+distributed SciVis style interactive renderer using the distributed MPI
+device. Note that because OSPRay uses sort-last compositing it is up to
+the user to ensure that the data distribution across the nodes is
+suitable. Specifically, each nodes' data must be convex and disjoint.
+This renderer supports multiple volumes and geometries per node. To
+ensure they are composited correctly you specify a list of bounding
+regions to the model, within these regions can be arbitrary
+volumes/geometries and each rank can have as many regions as needed. As
+long as the regions are disjoint/convex the data will be rendered
+correctly. In this demo we either generate a volume, or load a RAW
+volume file if one is passed on the commandline.
+
+### Loading a RAW Volume
+
+To load a RAW volume you must specify the filename (`-f <file>`), the
+data type (`-dtype <dtype>`), the dimensions (`-dims <x> <y> <z>`) and
+the value range for the transfer function (`-range <min> <max>`). For
+example, to run on the [CSAFE dataset from the demos
+page](http://www.ospray.org/demos.html#csafe-heptane-gas-dataset) you
+would pass the following arguments:
+
+    mpirun -np <n> ./ospDistribViewerDemo \
+        -f <path to csafe>/csafe-heptane-302-volume.raw \
+        -dtype uchar -dims 302 302 302 -range 0 255
+
+The volume file will then be chunked up into an `x×y×z` grid such that
+$n = xyz$. See `loadVolume` in
+[gensv/generateSciVis.cpp](https://github.com/ospray/ospray/blob/devel/modules/mpi/apps/gensv/generateSciVis.cpp#L213)
+for an example of how to properly load a volume distributed across ranks
+with correct specification of brick positions and ghost voxels for
+interpolation at boundaries. If no volume file data is passed a volume
+will be generated instead, in that case see `makeVolume`.
+
+### Geometry
+
+The viewer can also display some randomly generated sphere geometry if
+you pass `-spheres <n>` where `n` is the number of spheres to generate
+per-node. These spheres will be generated inside the bounding box of the
+region's volume data.
+
+In the case that you have geometry crossing the boundary of nodes and
+are replicating it on both nodes to render (ghost zones, etc.) the
+region will be used by the renderer to clip rays against allowing to
+split the object between the two nodes, with each rendering half. This
+will keep the regions rendered by each rank disjoint and thus avoid any
+artifacts. For example, if a sphere center is on the border between two
+nodes, each would render half the sphere and the halves would be
+composited to produce the final complete sphere in the image.
+
+### App-initialized MPI
+
+Passing the `-appMPI` flag will have the application initialize MPI
+instead of letting OSPRay do it internally when creating the MPI
+distributed device. In this case OSPRay will not finalize MPI when
+cleaning up the device, allowing the application to use OSPRay for some
+work, shut it down and recreate everything later if needed for
+additional computation, without accidentally shutting down its MPI
+communication.
+
+### Interactive Viewer
+
+Rank 0 will open an interactive window with GLFW and display the
+rendered image. When the application state needs to update (e.g. camera
+or transfer function changes), this information is broadcasted out to
+the other nodes to update their scene data.
 
 Demos
 -----

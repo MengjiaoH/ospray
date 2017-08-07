@@ -46,6 +46,7 @@ SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${OSPCOMMON_DIR}/cmake)
 ##############################################################
 
 INCLUDE(macros)
+INCLUDE(ospray_macros)
 INCLUDE(ospray_options)
 INCLUDE(ispc)
 
@@ -94,6 +95,12 @@ ENDIF()
 ##############################################################
 ADD_SUBDIRECTORY(modules)
 
+##############################################################
+# add target for running clang-format
+##############################################################
+OPTION(OSPRAY_ENABLE_TARGET_CLANGFORMAT
+       "Enable 'format' target, requires clang-format too" OFF)
+INCLUDE(clang-format)
 
 # create a configure file that both ospray and ispc can read the cmake config
 # from needs to be at the end, after all cache variables have been set
