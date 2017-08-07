@@ -87,7 +87,6 @@ namespace ospray {
                 << fileName << std::endl;
     }
 
-#define INVERT_RMB
     /*! currently active window */
     ImGui3DWidget *ImGui3DWidget::activeWindow = nullptr;
     vec2i ImGui3DWidget::defaultInitSize(1024,768);
@@ -97,7 +96,6 @@ namespace ospray {
     // InspectCenter Glut3DWidget::INSPECT_CENTER;
     /*! viewport as specified on the command line */
     ImGui3DWidget::ViewPort *viewPortFromCmdLine = nullptr;
-    vec3f upVectorFromCmdLine(0,1,0);
 
     // ------------------------------------------------------------------
     // implementation of glut3d::viewPorts
@@ -106,14 +104,21 @@ namespace ospray {
       modified(true),
       from(0,0,-1),
       at(0,0,0),
-      up(upVectorFromCmdLine),
+      up(0,1,0),
       openingAngle(60.f),
       aspect(1.f)
     {
       frame = AffineSpace3fa::translate(from) * AffineSpace3fa(ospcommon::one);
     }
 
-    void ImGui3DWidget::ViewPort::snapUp()
+    void ImGui3DWidget::ViewPort::snapViewUp()
+    {
+      auto look = at - from;
+      auto right = cross(look, up);
+      up = normalize(cross(right, look));
+    }
+
+    void ImGui3DWidget::ViewPort::snapFrameUp()
     {
       if (fabsf(dot(up,frame.l.vz)) < 1e-3f)
         return;
@@ -128,6 +133,9 @@ namespace ospray {
       if (!renderingPaused) manipulator->motion(this);
       lastMousePos = currMousePos;
     }
+
+    void ImGui3DWidget::mouseButton(int button, int action, int mods)
+    {}
 
     ImGui3DWidget::ImGui3DWidget(FrameBufferMode frameBufferMode,
                                  ManipulatorMode initialManipulator,
@@ -191,7 +199,7 @@ namespace ospray {
       viewPort.frame.l.vz =
           normalize(cross(viewPort.frame.l.vx,viewPort.frame.l.vy));
       viewPort.frame.p    = viewPort.from;
-      viewPort.snapUp();
+      viewPort.snapFrameUp();
       viewPort.modified = true;
     }
 
@@ -199,7 +207,7 @@ namespace ospray {
     {
       viewPort.up = up;
       if (up != vec3f(0.f))
-        viewPort.snapUp();
+        viewPort.snapFrameUp();
     }
 
     void ImGui3DWidget::reshape(const vec2i &newSize)
@@ -213,7 +221,7 @@ namespace ospray {
       if (animating) {
         auto *hack =
             (InspectCenter*)ImGui3DWidget::activeWindow->inspectCenterManipulator;
-        hack->rotate(-10.f * ImGui3DWidget::activeWindow->motionSpeed, 0);
+        hack->rotate(-.01f * ImGui3DWidget::activeWindow->motionSpeed, 0);
       }
 
 
@@ -264,7 +272,7 @@ namespace ospray {
       viewPort.frame.l.vz =
           normalize(cross(viewPort.frame.l.vx,viewPort.frame.l.vy));
       viewPort.frame.p    = from;
-      viewPort.snapUp();
+      viewPort.snapFrameUp();
       viewPort.modified = true;
     }
 
@@ -291,7 +299,7 @@ namespace ospray {
         viewPort.frame.l.vz =
             normalize(cross(viewPort.frame.l.vx,viewPort.frame.l.vy));
         viewPort.frame.p    = from;
-        viewPort.snapUp();
+        viewPort.snapFrameUp();
         viewPort.modified = true;
       }
 
@@ -352,7 +360,6 @@ namespace ospray {
       // NOTE(jda) - move key handler registration into this class
       ImGui_ImplGlfwGL3_Init(window, true);
 
-
       glfwSetCursorPosCallback(
         window,
         [](GLFWwindow*, double xpos, double ypos) {
@@ -366,12 +373,13 @@ namespace ospray {
         window,
         [](GLFWwindow*, int button, int action, int mods) {
           ImGui3DWidget::activeWindow->currButton[button] = action;
+          ImGui3DWidget::activeWindow->mouseButton(button, action, mods);
         }
       );
 
       glfwSetCharCallback(
         window,
-       [](GLFWwindow*, unsigned int c) {
+        [](GLFWwindow*, unsigned int c) {
           ImGuiIO& io = ImGui::GetIO();
           if (c > 0 && c < 0x10000)
             io.AddInputCharacter((unsigned short)c);
@@ -500,7 +508,7 @@ namespace ospray {
             removeArgs(*ac,(char **&)av,i,2); --i;
           } else {
             ImGui3DWidget::defaultInitSize.x = atoi(av[i+1]);
-            ImGui3DWidget::defaultInitSize.y = atoi(av[i+1]);
+            ImGui3DWidget::defaultInitSize.y = atoi(av[i+2]);
             removeArgs(*ac,(char **&)av,i,3); --i;
           }
           continue;
@@ -534,9 +542,9 @@ namespace ospray {
           auto& ay = viewPortFromCmdLine->at.y;
           auto& az = viewPortFromCmdLine->at.z;
 
-          auto& ux = upVectorFromCmdLine.x;
-          auto& uy = upVectorFromCmdLine.y;
-          auto& uz = upVectorFromCmdLine.z;
+          auto& ux = viewPortFromCmdLine->up.x;
+          auto& uy = viewPortFromCmdLine->up.y;
+          auto& uz = viewPortFromCmdLine->up.z;
 
           auto& fov = viewPortFromCmdLine->openingAngle;
 
@@ -560,11 +568,11 @@ namespace ospray {
           removeArgs(*ac,(char **&)av, i, 2); --i;
           continue;
         } if (arg == "-vu") {
-          upVectorFromCmdLine.x = atof(av[i+1]);
-          upVectorFromCmdLine.y = atof(av[i+2]);
-          upVectorFromCmdLine.z = atof(av[i+3]);
-          if (viewPortFromCmdLine)
-            viewPortFromCmdLine->up = upVectorFromCmdLine;
+          if (!viewPortFromCmdLine)
+            viewPortFromCmdLine = new ImGui3DWidget::ViewPort;
+          viewPortFromCmdLine->up.x = atof(av[i+1]);
+          viewPortFromCmdLine->up.y = atof(av[i+2]);
+          viewPortFromCmdLine->up.z = atof(av[i+3]);
           assert(i+3 < *ac);
           removeArgs(*ac,(char **&)av,i,4); --i;
           continue;

@@ -15,45 +15,30 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
+// ospcommon
+#include "ospcommon/utility/SaveImage.h"
+
 #include "imguiViewerSg.h"
 #include "common/sg/common/FrameBuffer.h"
 #include "transferFunction.h"
 
 #include <imgui.h>
+#include <imguifilesystem/imguifilesystem.h>
 #include <sstream>
 
 using std::string;
 using namespace ospcommon;
 
-// Static local helper functions //////////////////////////////////////////////
-
-// helper function to write the rendered image as PPM file
-static void writePPM(const string &fileName, const int sizeX, const int sizeY,
-                     const uint32_t *pixel)
-{
-  FILE *file = fopen(fileName.c_str(), "wb");
-  fprintf(file, "P6\n%i %i\n255\n", sizeX, sizeY);
-  unsigned char *out = (unsigned char *)alloca(3*sizeX);
-  for (int y = 0; y < sizeY; y++) {
-    const unsigned char *in = (const unsigned char *)&pixel[(sizeY-1-y)*sizeX];
-    for (int x = 0; x < sizeX; x++) {
-      out[3*x + 0] = in[4*x + 0];
-      out[3*x + 1] = in[4*x + 1];
-      out[3*x + 2] = in[4*x + 2];
-    }
-    fwrite(out, 3*sizeX, sizeof(char), file);
-  }
-  fprintf(file, "\n");
-  fclose(file);
-}
-
 // ImGuiViewer definitions ////////////////////////////////////////////////////
 
 namespace ospray {
 
+  ImGuiViewerSg::ImGuiViewerSg(const std::shared_ptr<sg::Node> &scenegraph)
+    : ImGuiViewerSg(scenegraph, nullptr)
+  {}
+
   ImGuiViewerSg::ImGuiViewerSg(const std::shared_ptr<sg::Node> &scenegraph,
-                               const std::shared_ptr<sg::Node> &scenegraphDW
-                               )
+                               const std::shared_ptr<sg::Node> &scenegraphDW)
     : ImGui3DWidget(ImGui3DWidget::FRAMEBUFFER_NONE),
       scenegraph(scenegraph),
       scenegraphDW(scenegraphDW),
@@ -96,6 +81,15 @@ namespace ospray {
   void ImGuiViewerSg::keypress(char key)
   {
     switch (key) {
+    case ' ':
+    {
+      if (scenegraph && scenegraph->hasChild("animationcontroller"))
+      {
+        bool animating = scenegraph->child("animationcontroller")["enabled"].valueAs<bool>();
+        scenegraph->child("animationcontroller")["enabled"].setValue(!animating);
+      }
+      break;
+    }
     case 'R':
       toggleRenderingPaused();
       break;
@@ -164,7 +158,8 @@ namespace ospray {
 
   void ImGuiViewerSg::saveScreenshot(const std::string &basename)
   {
-    writePPM(basename + ".ppm", windowSize.x, windowSize.y, pixelBuffer.data());
+    utility::writePPM(basename + ".ppm",
+                      windowSize.x, windowSize.y, pixelBuffer.data());
     std::cout << "saved current frame to '" << basename << ".ppm'" << std::endl;
   }
 
@@ -252,12 +247,13 @@ namespace ospray {
         bool orbitMode = (manipulator == inspectCenterManipulator);
         bool flyMode   = (manipulator == moveModeManipulator);
 
-        if (ImGui::Checkbox("Orbit Camera Mode", &orbitMode)) {
+        if (ImGui::Checkbox("Orbit Camera Mode", &orbitMode))
           manipulator = inspectCenterManipulator;
-        }
-        if (ImGui::Checkbox("Fly Camera Mode", &flyMode)) {
+
+        if (orbitMode) ImGui::Checkbox("Anchor 'Up' Direction", &upAnchored);
+
+        if (ImGui::Checkbox("Fly Camera Mode", &flyMode))
           manipulator = moveModeManipulator;
-        }
 
         if (ImGui::MenuItem("Reset View")) resetView();
         if (ImGui::MenuItem("Reset Accumulation")) viewPort.modified = true;
@@ -289,14 +285,16 @@ namespace ospray {
     ImGui::End();
   }
 
-  void ImGuiViewerSg::buildGUINode(std::string name, std::shared_ptr<sg::Node> node, int indent)
+  void ImGuiViewerSg::buildGUINode(std::string name,
+                                   std::shared_ptr<sg::Node> node,
+                                   int indent)
   {
     int styles=0;
     if (!node->isValid()) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImColor(200, 75, 48,255));
       styles++;
     }
-    std::string text;
+    std::string text("");
     std::string nameLower=name;
     std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
     std::string nodeNameLower=node->name();
@@ -393,13 +391,23 @@ namespace ospray {
       if (ImGui::InputText(text.c_str(), buf,
                            value.size()+256,
                            ImGuiInputTextFlags_EnterReturnsTrue))
+      {
+        std::cout << "enter pressed\n";
         node->setValue(std::string(buf));
-    } else { // generic holder node
+      }
+      free(buf);
+    } else if (node->type() == "Texture2D")
+    {
+      ImGui::Text(text.c_str(),"");
+    }
+    const int numChildren = node->numChildren();
+    if (numChildren > 0)
+    {
       text+=node->type();
       text += "##"+((std::ostringstream&)(std::ostringstream("")
                                           << node.get())).str(); //TODO: use unique uuid for every node
       if (ImGui::TreeNodeEx(text.c_str(),
-                            (indent > 0) ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
+                            (indent > 1 && numChildren > 20) ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
         {
           std::string popupName = "Add Node: ##" +
             ((std::ostringstream&)(std::ostringstream("")
@@ -408,42 +416,78 @@ namespace ospray {
           if (ImGui::BeginPopupContextItem("item context menu")) {
             char buf[256];
             buf[0]='\0';
-            if (ImGui::InputText("node name: ", buf,
-                                 256, ImGuiInputTextFlags_EnterReturnsTrue)) {
-              std::cout << "add node: \"" << buf << "\"\n";
-              try {
-                static int counter = 0;
-                std::stringstream ss;
-                ss << "userDefinedNode" << counter++;
-                node->add(sg::createNode(ss.str(), buf));
+            static std::shared_ptr<sg::Node> copiedLink = nullptr;
+            if (ImGui::Button("CopyLink"))
+              copiedLink = node;
+            if (ImGui::Button("PasteLink"))
+            {
+              if (copiedLink)
+              {
+                copiedLink->setParent(node->parent());
+                node->parent().setChild(name, copiedLink);
               }
-              catch (...)
-                {
-                  std::cerr << "invalid node type: " << buf << std::endl;
-                }
             }
-
-            ImGui::EndPopup();
-          } if (addChild) {
-            if (ImGui::BeginPopup(popupName.c_str())) {
-              char buf[256];
-              buf[0]='\0';
-              if (ImGui::InputText("node name: ", buf, 256,
-                                   ImGuiInputTextFlags_EnterReturnsTrue)) {
+            if (ImGui::Button("Add new node..."))
+              ImGui::OpenPopup("Add new node...");
+            if (ImGui::BeginPopup("Add new node..."))
+            {
+              if (ImGui::InputText("node type: ", buf,
+                                   256, ImGuiInputTextFlags_EnterReturnsTrue)) {
                 std::cout << "add node: \"" << buf << "\"\n";
                 try {
                   static int counter = 0;
                   std::stringstream ss;
                   ss << "userDefinedNode" << counter++;
                   node->add(sg::createNode(ss.str(), buf));
-                } catch (...) {
+                }
+                catch (...)
+                {
                   std::cerr << "invalid node type: " << buf << std::endl;
                 }
               }
               ImGui::EndPopup();
             }
-            else
-              addChild = false;
+            if (ImGui::Button("Set to new node..."))
+              ImGui::OpenPopup("Set to new node...");
+            if (ImGui::BeginPopup("Set to new node..."))
+            {
+              if (ImGui::InputText("node type: ", buf,
+                                   256, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                std::cout << "set node: \"" << buf << "\"\n";
+                try {
+                  static int counter = 0;
+                  std::stringstream ss;
+                  ss << "userDefinedNode" << counter++;
+                  auto newNode = sg::createNode(ss.str(), buf);
+                  newNode->setParent(node->parent());
+                  node->parent().setChild(name, newNode);
+                }
+                catch (...)
+                {
+                  std::cerr << "invalid node type: " << buf << std::endl;
+                }
+              }
+              ImGui::EndPopup();
+            }
+            static ImGuiFs::Dialog importdlg;
+            const bool importButtonPressed = ImGui::Button("Import...");
+            const char* importpath = importdlg.chooseFileDialog(importButtonPressed);
+            if (strlen(importpath) > 0)
+            {
+              std::cout << "importing OSPSG file from path: " << importpath << std::endl;
+              sg::loadOSPSG(node, std::string(importpath));
+            }
+
+            static ImGuiFs::Dialog exportdlg;
+            const bool exportButtonPressed = ImGui::Button("Export...");
+            const char* exportpath = exportdlg.saveFileDialog(exportButtonPressed);
+            if (strlen(exportpath) > 0)
+            {
+              std::cout << "writing OSPSG file to path: " << exportpath << std::endl;
+              sg::writeOSPSG(node, std::string(exportpath));
+            }
+
+            ImGui::EndPopup();
           }
 
           if (node->type() == "TransferFunction") {
@@ -471,7 +515,8 @@ namespace ospray {
 
         ImGui::TreePop();
       }
-    }
+    } else { // generic holder node
+   }
 
     if (!node->isValid())
       ImGui::PopStyleColor(styles--);

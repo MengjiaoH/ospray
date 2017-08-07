@@ -61,22 +61,23 @@ namespace ospray {
 
           lastRTime = sg::TimeStamp();
         }
+        if (scenegraph->hasChild("animationcontroller"))
+          scenegraph->child("animationcontroller").traverse("animate");
 
         fps.start();
         scenegraph->traverse("render");
-        if (scenegraphDW) 
+        if (scenegraphDW)
           scenegraphDW->traverse("render");
         once = true;
-        
         fps.stop();
-        auto sgFBptr =
-            std::static_pointer_cast<sg::FrameBuffer>(sgFB.shared_from_this());
+
+        auto sgFBptr = sgFB.nodeAs<sg::FrameBuffer>();
 
         auto *srcPB = (uint32_t*)sgFBptr->map();
         auto *dstPB = (uint32_t*)pixelBuffer[currentPB].data();
 
         memcpy(dstPB, srcPB, nPixels*sizeof(uint32_t));
-        
+
         sgFBptr->unmap(srcPB);
 
         if (fbMutex.try_lock()) {

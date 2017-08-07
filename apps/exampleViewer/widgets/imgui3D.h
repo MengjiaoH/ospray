@@ -87,9 +87,13 @@ namespace ospray {
            itself remains normalized. */
          AffineSpace3fa frame;
 
+         /*! use current 'from', 'up', and 'at' to fix the 'up' vector according
+             to */
+         void snapViewUp();
+
          /*! set 'up' vector. if this vector is '0,0,0' the viewer will
           *not* apply the up-vector after camera manipulation */
-         void snapUp();
+         void snapFrameUp();
 
          ViewPort();
        };
@@ -119,6 +123,7 @@ namespace ospray {
        // ------------------------------------------------------------------
 
        virtual void motion(const vec2i &pos);
+       virtual void mouseButton(int button, int action, int mods);
        virtual void reshape(const vec2i &newSize);
        /*! display this window. By default this will just clear this
            window's framebuffer; it's up to the user to override this fct
@@ -176,6 +181,7 @@ namespace ospray {
        double guiTime;
        double totalTime;
        float  fontScale;
+       bool upAnchored {true};
 
        bool renderingPaused {false};
        /*! pointer to the frame buffer data. it is the repsonsiblity of
