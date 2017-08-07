@@ -44,6 +44,8 @@ void StreamLines_bounds(uniform StreamLines *uniform self,
   const uniform vec3f B = make_vec3f(self->vertex[index+1]);
   bbox = make_box3fa(min(A,B) - self->radius,
                      max(A,B) + self->radius);
+    // bbox = make_box3fa(min(A,B),
+    //                  max(A,B) + self->radius);
 }
 
 inline bool intersectShiftedSphere(varying Ray &ray,
@@ -87,6 +89,14 @@ inline bool intersectShiftedCylinder(varying Ray &ray,
   const float b     = 2 * dot(VxAB,AOxAB);
   const float c     = dot(AOxAB,AOxAB) - (sqr(r) * ab2);
 
+//  const vec3f alpha = V - dot(V, AB) * AB;
+//   const float a = sqr(alpha);
+//   const vec3f deltaP = ray.org - A;
+//   const float b = 2.f * dot( V - dot(V, AB) * AB, deltaP - dot(deltaP, AB) * AB );
+//   // const float b = -2.f * (dot(V, A) - dot(V, AB) * dot(A, AB));
+//   // const float c = dot(A, A) - sqr(dot(A, AB))  - sqr(r);
+//   const float c = sqr(deltaP - dot(deltaP, AB) * AB) - sqr(r);
+
   // clip to near and far cap of cylinder
   const float rVAB = rcp(dot(V,AB));
   const float tA = dot(AB,A) * rVAB;
@@ -115,6 +125,60 @@ inline bool intersectShiftedCylinder(varying Ray &ray,
   return false;
 }
 
+/*
+** INTERSECTION WITH A CONE
+*/
+inline bool intersectShiftedCone(varying Ray &ray, const vec3f &A, const vec3f &B, const uniform float r)
+{
+    const vec3f D = ray.dir;
+    const vec3f V = B - A; // A is the tip
+    const float h = length(V);
+    const float cos2 = sqr(h / sqrt(sqr(h) + sqr(r)));
+
+    const vec3f CO = A;
+   //  compute a b c for determinant
+    const float a = sqr(dot(D, V)) - cos2;
+    const float b = -2.f * ( dot(D, V) * dot(CO, V) - dot(D, CO) * cos2);
+    const float c = sqr(dot(CO, V)) - dot(CO, CO) * cos2;
+
+    // clip to near and far cap of cone
+    const float rVAB = rcp(dot(D,V));
+    const float tA = dot(V, A) * rVAB;
+    const float tB = dot(V, B) * rVAB;
+    const float tAB0 = max(ray.t0,min(tA,tB));
+    const float tAB1 = min(ray.t, max(tA,tB));
+
+    const float radical = b*b-4.f*a*c;
+    if (radical < 0.f) return false;
+  
+    const float srad = sqrt(radical);
+
+    const float t_in = (- b - srad) *rcpf(2.f*a);
+    const float t_out= (- b + srad) *rcpf(2.f*a);
+
+  if (t_in >= tAB0 && t_in <= tAB1) {
+    ray.t = t_in;
+    return true;
+  } else if (t_out >= tAB0 && t_out <= tAB1) {
+    ray.t = t_out;
+    return true;
+  }
+
+  return false;    
+                                                
+
+
+  //   if (t_in > ray.t0 && t_in < ray.t) {
+  //   ray.t = t_in;
+  //   return true;
+  // } else if (t_out > ray.t0 && t_out < ray.t) {
+  //   ray.t = t_out;
+  //   return true;
+  // }
+  // return false;
+
+}
+
 void StreamLines_intersect(uniform StreamLines *uniform self,
                            varying Ray &ray,
                            uniform size_t primID)
@@ -124,7 +188,9 @@ void StreamLines_intersect(uniform StreamLines *uniform self,
   const vec3f B = make_vec3f(self->vertex[idx+1]) - ray.org;
 
   bool hit = 0;
-  hit |= intersectShiftedCylinder(ray,A,B,self->radius);
+  bool hitCylinder = 0;
+  hit|= intersectShiftedCylinder(ray,A,B,self->radius);
+  // hit |= intersectShiftedCone(ray, A, B, self -> radius);
   hit |= intersectShiftedSphere(ray,A,self->radius);
   hit |= intersectShiftedSphere(ray,B,self->radius);
 
@@ -138,6 +204,7 @@ void StreamLines_intersect(uniform StreamLines *uniform self,
     ray.u = s;
     ray.Ng = normalize(P-PonAxis);
   }
+
 }
 
 static void StreamLines_postIntersect(uniform Geometry *uniform self,

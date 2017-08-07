@@ -221,6 +221,7 @@ namespace commandline {
 
       vec3fa pnt;
       std::vector<float> magnitude;
+      std::cout << " #  of points: " << output -> GetNumberOfPoints() << std::endl;
       // read points
       for (int i = 0; i < output -> GetNumberOfPoints(); i++)
       {
@@ -232,6 +233,9 @@ namespace commandline {
         float mag = std::sqrt(point[0] * point[0] + point[1] * point[1] + point[2] * point[2]);
         magnitude.push_back(mag);
       }
+      std::cout << " vertex 2884 is " << vertex[2883].x << " " << vertex[2883].y<< std::endl;
+      std::cout << " vertex 2885 is " << vertex[2884].x << " " << vertex[2884].y<< std::endl;
+      std::cout << " vertex 2886 is " << vertex[2885].x << " " << vertex[2885].y<< std::endl;
       // map magnitude to color
         float max = *std::max_element(magnitude.begin(), magnitude.end());
         float min = *std::min_element(magnitude.begin(), magnitude.end());
@@ -244,16 +248,27 @@ namespace commandline {
       // read index by lines
       lines -> InitTraversal();
       vtkSmartPointer<vtkIdList> idList = vtkSmartPointer<vtkIdList>::New();
+      int iteration = 0;
       while(lines ->GetNextCell(idList))
       {
         std::vector<int32_t> tempindex;
+        // std::cout << "iteration: " << iteration++ << std::endl;
+        // std::cout << "index: " << std::endl;
+        // std::cout << "# idList GetNumberOfIds:  " << idList -> GetNumberOfIds() << std::endl;
         for( vtkIdType pointId = 0; pointId < idList -> GetNumberOfIds() - 1; pointId++)
         {
           int32_t i_ = idList -> GetId(pointId);
+          // std::cout  << i_ << " ";
           index.push_back(i_);
           tempindex.push_back(i_);
         }
+        std::cout << std::endl;
         tempindex.push_back(idList -> GetId(idList -> GetNumberOfIds()));
+        // debug
+        // for(int32_t i; i < tempindex.size(); i++)
+        // {
+        //   std::cout << "index: " << tempindex[i] << std::endl;
+        // }
         // map index to color
           float max = *std::max_element(tempindex.begin(), tempindex.end());
           float min = *std::min_element(tempindex.begin(), tempindex.end());
@@ -603,14 +618,15 @@ namespace commandline {
                                                                 OSP_FLOAT4, &streamLines -> index_color[0]);
         ospSetObject(geom,"vertex",vertex);
         ospSetObject(geom,"index",index);
+        std::cout << streamLines ->vertex.size() <<std::endl;
         //color
         // std::string temp = streamLines -> colorflag;
-        std::cout << "colorflag: " << streamLines -> colorflag << std::endl;
-        if(streamLines -> colorflag == 0){
-          ospSetObject(geom, "vertex.color", magnitude_color);
-        }else{
-          ospSetObject(geom, "vertex.color", index_color);
-        }
+        //std::cout << "colorflag: " << streamLines -> colorflag << std::endl;
+        //if(streamLines -> colorflag == 0){
+        //  ospSetObject(geom, "vertex.color", magnitude_color);
+       // }else{
+       //   ospSetObject(geom, "vertex.color", index_color);
+      //  }
 
         ospSet1f(geom,"radius",streamLines->radius);
         if (mat)
